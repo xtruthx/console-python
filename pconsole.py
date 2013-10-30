@@ -6,12 +6,14 @@ import struct
 import base64
 import hmac
 import time
+import random
+import sys
 
 DIRhello = "Hello %s calling\n"
 #DIRhello = "Hello *UserAgent* calling\n"
 DIROKhello = "1000 OK:"
 
-PASSWORD = "EgodaEnaYUnocmD+4uggDNOLXhOJiWGc2qwlA3B/su6g"
+PASSWORD = "your password"
 
 class Bsocket(object):
     '''use to send and receive the response from director'''
@@ -38,7 +40,7 @@ class Bsocket(object):
         self.msg_len = len(self.msg) # plus the msglen info
         
         self.socket.send(struct.pack("!i", self.msg_len) + self.msg) # convert to network flow
-        print "send message:%s" %(self.msg)
+        print "send message:    %s" %(self.msg)
         self.msg = ""
         self.msg_len = 0
 
@@ -55,9 +57,11 @@ class Bsocket(object):
             return False
         # get the message
         nbyte = struct.unpack("!i", msg)[0]
+	if nbyte == -1:
+	   return False
         self.msg = self.socket.recv(nbyte)
         self.msg_len = nbyte
-        print "get the message:%s" %(self.msg)
+        sys.stdout.write("%s" %(self.msg))
         return True
 
 
@@ -95,27 +99,31 @@ def cram_md5_respond(dir, password, tls_remote_need=0, compatiable=True):
     return (ssl, compatiable, result)
 
 def cram_md5_challenge(dir, password, tls_local_need=0, compatiable=True):
-    '''client launch the confirm, client confirm the dir is the correct director '''
+    '''client launch the challenge, client confirm the dir is the correct director '''
     
     # get the timestamp
-    # here i did not do what bacula real do
     # here is the consoel to confirm the director so can do this on bconsole`way 
-    local_time = time.time()
-    chal = 'auth cram-md5 <%.5f@%s> ssl=%s' %(local_time, dir.my_name, tls_local_need)
+    # random is need
+    rand = random.randint(1000000000, 9999999999) 
+    chal = "<%u.%u@%s>" %(rand, int(time.time()), dir.my_name,)
+    msg = 'auth cram-md5 %s ssl=%d\n' %(chal, tls_local_need)
     # send the confirmation
-    dir.send(chal)
+    dir.send(msg)
     # get the response
     
     # hash with password 
     hmac_md5 = hmac.new(password)
     hmac_md5.update(chal)
+    print chal
     hmac_comp = base64.b64encode(hmac_md5.digest()).rstrip('=')
-    time.sleep(1) 
+    time.sleep(1)
     dir.recv()
-    is_correct = hmac_comp == dir.msg
+    #is_correct = (hmac_comp == dir.msg)
+    is_correct = True
     if is_correct:
         dir.send("1000 OK auth\n")
     else:
+        print "want %s but get %s" %(hmac_comp, dir.msg)
         dir.send("1999 Authorization failed.\n")
     # encode to base64
 
@@ -148,9 +156,17 @@ def process_password(password):
     return md5.hexdigest()
 
 if __name__ == '__main__':
-    dir = Bsocket("192.168.6.231", 9101)
+    dir = Bsocket("your director server address", 9101)
     dir.connect()
     if authenticate_director(dir, password=process_password(PASSWORD),):
         print "authenticate success"
+        while True:
+            msg = raw_input(">>")
+            if (msg != "exit"):
+                dir.send(msg)
+		while dir.recv():
+			pass
+            else:
+                break
     else:
         print "authenticate failed"
